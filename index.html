@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0F172A">
+  <title>Badminton Live Scoreboard</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PeerJS WebRTC CDN -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- QRCode.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    /* Prevent accidental zoom and text selection */
+    * {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    /* Score digit styling */
+    .score-digit {
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* Pulse animation on score increment */
+    @keyframes scorePulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    .score-pulse {
+      animation: scorePulse 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* Ripple effect on touch */
+    .ripple {
+      position: absolute;
+      border-radius: 50%;
+      transform: scale(0);
+      animation: rippleEffect 0.5s ease-out;
+      background-color: rgba(255, 255, 255, 0.35);
+      pointer-events: none;
+    }
+    @keyframes rippleEffect {
+      to {
+        transform: scale(4);
+        opacity: 0;
+      }
+    }
+
+    /* Glowing border for server side */
+    .server-glow {
+      box-shadow: inset 0 0 40px rgba(250, 204, 21, 0.45), 0 0 25px rgba(250, 204, 21, 0.35);
+    }
+
+    /* Smooth transitions */
+    .court-side {
+      transition: background-color 0.4s ease, transform 0.3s ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen w-screen overflow-hidden select-none flex flex-col font-sans">
+
+  <!-- ================= TOP NAVIGATION / STATUS BAR ================= -->
+  <header id="top-bar" class="z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-3 py-2 flex items-center justify-between transition-all duration-300">
+    <!-- Left: Brand & Room PIN -->
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 font-bold tracking-wider text-sm sm:text-base">
+        <span class="text-xl">🏸</span>
+        <span class="bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 bg-clip-text text-transparent">BADMINTON</span>
+      </div>
+
+      <!-- Mode Badge -->
+      <span id="mode-badge" class="ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+        <span id="mode-badge-text">Standalone</span>
+      </span>
+
+      <!-- Room PIN Tag (Shown in Controller mode) -->
+      <button id="room-pin-pill" onclick="openPairModal()" class="hidden text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition flex items-center gap-1.5 cursor-pointer">
+        <span>PIN:</span>
+        <span id="top-bar-pin" class="tracking-widest">------</span>
+        <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+      </button>
+    </div>
+
+    <!-- Center: Match Game / Interval Info -->
+    <div id="match-status-center" class="hidden sm:flex items-center gap-3 text-xs md:text-sm font-medium text-slate-300">
+      <span id="game-round-badge" class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700">Game 1 (21 pts)</span>
+      <span id="match-interval-badge" class="hidden px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/40 animate-pulse font-bold">INTERVAL (60s)</span>
+    </div>
+
+    <!-- Right: Quick Controls -->
+    <div class="flex items-center gap-1.5 sm:gap-2">
+      <!-- Lock Screen Button (Controller mode) -->
+      <button id="btn-touch-lock" onclick="toggleTouchLock()" title="Lock Screen (Prevent Accidental Taps)" class="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+        <svg id="icon-unlocked" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
+        <svg id="icon-locked" class="w-4 h-4 text-amber-400 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 5a3 3 0 016 0v3H9V7zm3 7a2 2 0 11-2 2 2 2 0 012-2z"/></svg>
+      </button>
+
+      <!-- Wake Lock Indicator -->
+      <button id="btn-wakelock" onclick="toggleWakeLockManual()" title="Keep Screen Awake (Wake Lock)" class="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+      </button>
+
+      <!-- Fullscreen Button -->
+      <button onclick="toggleFullScreen()" title="Toggle Fullscreen" class="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+      </button>
+
+      <!-- Menu / Connect Modal Button -->
+      <button onclick="openMenuModal()" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium text-xs sm:text-sm text-white shadow-sm flex items-center gap-1.5 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+        <span class="hidden sm:inline">Options</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= NOTIFICATION / INTERVAL BANNER ================= -->
+  <div id="interval-alert-banner" class="hidden z-20 bg-amber-500 text-slate-950 font-extrabold text-center py-2 px-4 shadow-lg text-sm sm:text-base tracking-wide flex items-center justify-center gap-2">
+    <span>⏱️ 11-POINT INTERVAL (60-SECOND REST BREAK)</span>
+    <button onclick="dismissIntervalAlert()" class="ml-3 px-2 py-0.5 rounded bg-slate-950 text-amber-400 text-xs font-semibold hover:bg-slate-900">Dismiss</button>
+  </div>
+
+  <!-- ================= MATCH WINNER OVERLAY ================= -->
+  <div id="match-winner-overlay" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+    <div class="text-6xl mb-4 animate-bounce">🏆</div>
+    <h2 id="winner-team-title" class="text-4xl sm:text-6xl font-black tracking-tight mb-2 text-yellow-400">TEAM BLUE WINS!</h2>
+    <p id="winner-match-summary" class="text-xl sm:text-2xl text-slate-300 font-semibold mb-8">Sets: 2 - 0 (21-18, 21-15)</p>
+    <div class="flex flex-wrap items-center justify-center gap-4">
+      <button onclick="resetMatch(true)" class="px-8 py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-lg shadow-xl shadow-amber-500/30 transition transform hover:scale-105">
+        Start New Match
+      </button>
+      <button onclick="closeWinnerOverlay()" class="px-6 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-lg border border-slate-700 transition">
+        View Final Scoreboard
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= MAIN SCOREBOARD CONTAINER ================= -->
+  <main id="scoreboard" class="flex-1 w-full grid grid-cols-1 md:grid-cols-2 relative overflow-hidden transition-all duration-300">
+
+    <!-- ================= COURT SIDE 1 (BLUE) ================= -->
+    <section id="side-left" 
+             class="court-side relative flex flex-col justify-between p-4 sm:p-6 lg:p-8 cursor-pointer select-none overflow-hidden bg-blue-700 active:bg-blue-800 transition-colors duration-200 border-b-4 md:border-b-0 md:border-r-4 border-slate-950/30"
+             onclick="handleSideClick('left', event)"
+             data-side="left">
+      
+      <!-- Top info bar of Side 1: Name, Sets, Server Icon -->
+      <div class="z-10 flex items-center justify-between w-full">
+        <!-- Team Name & Editing -->
+        <div class="flex items-center gap-2">
+          <button onclick="editTeamName('left', event)" title="Click to rename" class="group flex items-center gap-1.5 text-left bg-black/20 hover:bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/20 transition">
+            <span id="name-left" class="font-extrabold text-base sm:text-xl lg:text-2xl tracking-wide uppercase">TEAM BLUE</span>
+            <svg class="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+          </button>
+        </div>
+
+        <!-- Serving Indicator + Court Position (Even/Odd Rule) -->
+        <div id="server-badge-left" class="flex items-center gap-1.5 bg-yellow-400 text-slate-950 font-black px-3 py-1 rounded-xl shadow-lg border border-yellow-300 text-xs sm:text-sm animate-pulse">
+          <span class="text-base sm:text-lg">🏸</span>
+          <span id="serve-side-text-left">SERVE (RIGHT)</span>
+        </div>
+      </div>
+
+      <!-- Center: Massive Score Display -->
+      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-2">
+        <span id="score-left" class="score-digit text-[28vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
+          0
+        </span>
+        <div class="text-xs sm:text-sm font-semibold tracking-wider text-blue-200/80 uppercase">
+          Tap +1 &nbsp;•&nbsp; Swipe Down -1
+        </div>
+      </div>
+
+      <!-- Bottom Bar of Side 1: Sets Won -->
+      <div class="z-10 flex items-center justify-between w-full">
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-blue-100/90">GAMES WON:</span>
+          <div id="sets-container-left" class="flex items-center gap-1.5">
+            <span class="set-dot-left-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
+            <span class="set-dot-left-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
+          </div>
+        </div>
+
+        <!-- Minus Button (Helpful fallback for touch/desktop) -->
+        <button onclick="decrementScore('left', event)" title="Decrease score" class="ctrl-btn bg-black/25 hover:bg-black/45 active:bg-black/60 p-2.5 sm:p-3 rounded-2xl border border-white/20 transition flex items-center justify-center">
+          <svg class="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- ================= COURT SIDE 2 (RED) ================= -->
+    <section id="side-right" 
+             class="court-side relative flex flex-col justify-between p-4 sm:p-6 lg:p-8 cursor-pointer select-none overflow-hidden bg-red-700 active:bg-red-800 transition-colors duration-200"
+             onclick="handleSideClick('right', event)"
+             data-side="right">
+      
+      <!-- Top info bar of Side 2: Name, Sets, Server Icon -->
+      <div class="z-10 flex items-center justify-between w-full">
+        <!-- Team Name & Editing -->
+        <div class="flex items-center gap-2">
+          <button onclick="editTeamName('right', event)" title="Click to rename" class="group flex items-center gap-1.5 text-left bg-black/20 hover:bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/20 transition">
+            <span id="name-right" class="font-extrabold text-base sm:text-xl lg:text-2xl tracking-wide uppercase">TEAM RED</span>
+            <svg class="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+          </button>
+        </div>
+
+        <!-- Serving Indicator + Court Position (Even/Odd Rule) -->
+        <div id="server-badge-right" class="hidden flex items-center gap-1.5 bg-yellow-400 text-slate-950 font-black px-3 py-1 rounded-xl shadow-lg border border-yellow-300 text-xs sm:text-sm animate-pulse">
+          <span class="text-base sm:text-lg">🏸</span>
+          <span id="serve-side-text-right">SERVE (RIGHT)</span>
+        </div>
+      </div>
+
+      <!-- Center: Massive Score Display -->
+      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-2">
+        <span id="score-right" class="score-digit text-[28vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
+          0
+        </span>
+        <div class="text-xs sm:text-sm font-semibold tracking-wider text-red-200/80 uppercase">
+          Tap +1 &nbsp;•&nbsp; Swipe Down -1
+        </div>
+      </div>
+
+      <!-- Bottom Bar of Side 2: Sets Won -->
+      <div class="z-10 flex items-center justify-between w-full">
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-red-100/90">GAMES WON:</span>
+          <div id="sets-container-right" class="flex items-center gap-1.5">
+            <span class="set-dot-right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
+            <span class="set-dot-right-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
+          </div>
+        </div>
+
+        <!-- Minus Button (Helpful fallback for touch/desktop) -->
+        <button onclick="decrementScore('right', event)" title="Decrease score" class="ctrl-btn bg-black/25 hover:bg-black/45 active:bg-black/60 p-2.5 sm:p-3 rounded-2xl border border-white/20 transition flex items-center justify-center">
+          <svg class="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"></path></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- TOUCH LOCK OVERLAY (When user locks phone in Controller Mode) -->
+    <div id="touch-lock-overlay" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+      <div class="w-16 h-16 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mb-4">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 5a3 3 0 016 0v3H9V7zm3 7a2 2 0 11-2 2 2 2 0 012-2z"/></svg>
+      </div>
+      <h3 class="text-2xl font-black text-white mb-2">Screen Locked</h3>
+      <p class="text-sm text-slate-300 max-w-xs mb-6">Touch controls are locked to avoid accidental pocket or hand touches.</p>
+      <button onclick="toggleTouchLock()" class="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-base shadow-lg transition">
+        Tap to Unlock
+      </button>
+    </div>
+
+    <!-- DISPLAY MODE TOUCH-IMMUNE COVER (Only active in Display mode) -->
+    <div id="display-mode-shield" class="hidden absolute inset-0 z-20 pointer-events-auto bg-transparent">
+      <!-- Transparent click interceptor preventing score changes on courtside iPad -->
+    </div>
+  </main>
+
+  <!-- ================= BOTTOM ACTION BAR (CONTROLLER MODE ONLY) ================= -->
+  <footer id="bottom-bar" class="z-30 bg-slate-950/95 border-t border-slate-800 px-3 py-2 flex items-center justify-around gap-2 text-xs sm:text-sm">
+    <!-- Undo Button -->
+    <button onclick="undoLastAction()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+      <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+      <span>Undo</span>
+    </button>
+
+    <!-- Switch Ends (สลับฝั่ง) -->
+    <button onclick="switchEnds()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+      <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+      <span>Swap Ends</span>
+    </button>
+
+    <!-- Switch Server -->
+    <button onclick="toggleServerManual()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+      <span class="text-sm">🏸</span>
+      <span>Toggle Serve</span>
+    </button>
+
+    <!-- Reset Match Button -->
+    <button onclick="confirmReset()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-rose-950 active:bg-rose-900 text-rose-300 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+      <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+      <span>Reset</span>
+    </button>
+  </footer>
+
+  <!-- ================= OPTIONS / MODE SELECTOR MODAL ================= -->
+  <div id="menu-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+      <!-- Close Button -->
+      <button onclick="closeMenuModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <div class="flex items-center gap-2 mb-5">
+        <span class="text-2xl">🏸</span>
+        <h3 class="text-xl font-black text-white">Mode & Connection</h3>
+      </div>
+
+      <!-- Mode Selection Cards -->
+      <div class="space-y-3 mb-6">
+        <!-- Option 1: Controller Mode (Phone) -->
+        <div onclick="selectMode('controller')" class="cursor-pointer p-4 rounded-2xl bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-indigo-700/50 hover:border-indigo-500 transition flex items-start gap-3.5">
+          <div class="p-2.5 rounded-xl bg-indigo-600 text-white mt-0.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <h4 class="font-extrabold text-white text-base">Controller Mode (มือถือ)</h4>
+              <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">Umpire</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Host a match and tap/swipe to score. Generates a 6-digit PIN & QR Code for iPad connection.</p>
+          </div>
+        </div>
+
+        <!-- Option 2: Display Mode (iPad / TV) -->
+        <div onclick="selectMode('display')" class="cursor-pointer p-4 rounded-2xl bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-700/50 hover:border-emerald-500 transition flex items-start gap-3.5">
+          <div class="p-2.5 rounded-xl bg-emerald-600 text-white mt-0.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <h4 class="font-extrabold text-white text-base">Display Score (ไอแพด)</h4>
+              <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Read-Only</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Connect to a phone using a 6-digit PIN. Read-only, screen wake locked, and touch-immune.</p>
+          </div>
+        </div>
+
+        <!-- Option 3: Standalone -->
+        <div onclick="selectMode('standalone')" class="cursor-pointer p-4 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-slate-600 transition flex items-start gap-3.5">
+          <div class="p-2.5 rounded-xl bg-slate-700 text-slate-200 mt-0.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          </div>
+          <div class="flex-1">
+            <h4 class="font-bold text-white text-base">Standalone Mode (เครื่องเดียว)</h4>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Score on this device without connecting to other devices.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Sound / Vibration Settings -->
+      <div class="border-t border-slate-800 pt-4 flex items-center justify-between text-xs text-slate-400">
+        <span>Sound Feedback:</span>
+        <button id="toggle-sound-btn" onclick="toggleSound()" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 font-semibold">Sound: ON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CONTROLLER PAIRING / QR MODAL ================= -->
+  <div id="pair-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative text-center">
+      <button onclick="closePairModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <span class="text-3xl mb-2 inline-block">📲 ⇄ 📟</span>
+      <h3 class="text-xl font-black text-white mb-1">Connect Courtside iPad</h3>
+      <p class="text-xs text-slate-400 mb-4">Scan QR code with iPad or enter this 6-digit PIN on the iPad screen.</p>
+
+      <!-- 6-Digit PIN Display -->
+      <div class="bg-slate-950 border-2 border-amber-500/50 rounded-2xl p-3 mb-4 shadow-inner">
+        <span class="text-xs uppercase font-bold text-amber-400 tracking-wider block mb-1">ROOM PIN</span>
+        <div id="modal-pin-display" class="text-3xl sm:text-4xl font-mono font-black tracking-widest text-white">------</div>
+      </div>
+
+      <!-- QR Code Canvas Container -->
+      <div class="flex flex-col items-center justify-center p-3 bg-white rounded-2xl mb-4 shadow-lg mx-auto w-fit">
+        <div id="qrcode-canvas" class="w-44 h-44 flex items-center justify-center"></div>
+      </div>
+
+      <!-- Copy Direct Link Button -->
+      <button onclick="copyDisplayLink()" id="btn-copy-link" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs sm:text-sm text-white shadow-md flex items-center justify-center gap-2 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+        <span id="copy-link-text">Copy Instant Link</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= DISPLAY PIN ENTRY MODAL ================= -->
+  <div id="display-connect-modal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative text-center">
+      <button onclick="closeDisplayConnectModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <span class="text-3xl mb-2 inline-block">📟</span>
+      <h3 class="text-xl font-black text-white mb-1">Enter Room PIN</h3>
+      <p class="text-xs text-slate-400 mb-5">Enter the 6-digit code shown on the phone controller.</p>
+
+      <div class="mb-5">
+        <input type="number" 
+               pattern="[0-9]*" 
+               inputmode="numeric" 
+               id="input-room-pin" 
+               placeholder="123456" 
+               maxlength="6"
+               class="w-full text-center text-3xl font-mono font-black tracking-widest bg-slate-950 border-2 border-slate-700 focus:border-emerald-500 rounded-2xl py-3 px-4 text-white placeholder-slate-600 outline-none transition">
+      </div>
+
+      <button onclick="connectAsDisplay()" id="btn-submit-display-connect" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-sm text-white shadow-lg shadow-emerald-600/30 transition">
+        Connect & Display
+      </button>
+
+      <div id="display-connect-error" class="hidden text-xs text-rose-400 mt-3 font-medium"></div>
+    </div>
+  </div>
+
+  <!-- ================= RENAME TEAM MODAL ================= -->
+  <div id="rename-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative">
+      <button onclick="closeRenameModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
+      <h3 class="text-lg font-black text-white mb-3">Edit Player / Team Name</h3>
+      <input type="text" id="rename-input" maxlength="24" class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl py-2.5 px-4 text-white text-base outline-none mb-4 uppercase">
+      
+      <div class="flex items-center gap-2">
+        <button onclick="closeRenameModal()" class="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs">Cancel</button>
+        <button onclick="saveTeamName()" class="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT APPLICATION LOGIC ================= -->
+  <script>
+    /* =================================================================
+     * STATE MANAGEMENT & BADMINTON RULES CONFIGURATION
+     * ================================================================= */
+    const PEER_PREFIX = 'badmin-score-'; // Prefix to isolate PeerJS IDs
+
+    let state = {
+      mode: 'standalone', // 'standalone' | 'controller' | 'display'
+      roomPin: null,
+      teamA: {
+        id: 'A',
+        name: 'TEAM BLUE',
+        score: 0,
+        setsWon: 0,
+        color: 'blue'
+      },
+      teamB: {
+        id: 'B',
+        name: 'TEAM RED',
+        score: 0,
+        setsWon: 0,
+        color: 'red'
+      },
+      // Court assignment: left team and right team
+      courtLeft: 'A',  // team id on left side of UI
+      courtRight: 'B', // team id on right side of UI
+      servingTeam: 'A', // 'A' or 'B'
+      gameNumber: 1,
+      targetScore: 21,
+      maxScore: 30,
+      setsToWin: 2, // Best of 3
+      intervalTriggered: false,
+      history: [],
+      matchWinner: null
+    };
+
+    // Connection & Device State
+    let peer = null;
+    let peerConnections = []; // If controller, stores connected displays
+    let displayConn = null;   // If display, stores conn to controller
+    let wakeLock = null;
+    let isTouchLocked = false;
+    let soundEnabled = true;
+    let activeEditingSide = null;
+
+    // Web Audio Synthesizer for Clean Feedback
+    let audioCtx = null;
+    function playBeep(freq = 600, duration = 0.08, type = 'sine') {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        console.warn('Audio not allowed or supported', e);
+      }
+    }
+
+    // Haptic Feedback Helper
+    function triggerHaptic(pattern = 35) {
+      if ('vibrate' in navigator) {
+        try { navigator.vibrate(pattern); } catch (e) {}
+      }
+    }
+
+    /* =================================================================
+     * BADMINTON RULES ENGINE
+     * ================================================================= */
+    function recordStateForUndo() {
+      // Deep snapshot of current game state
+      const snapshot = {
+        teamA: { ...state.teamA },
+        teamB: { ...state.teamB },
+        courtLeft: state.courtLeft,
+        courtRight: state.courtRight,
+        servingTeam: state.servingTeam,
+        gameNumber: state.gameNumber,
+        intervalTriggered: state.intervalTriggered,
+        matchWinner: state.matchWinner
+      };
+      state.history.push(snapshot);
+      if (state.history.length > 50) state.history.shift(); // Keep 50 steps
+    }
+
+    function addScore(teamId) {
+      if (state.mode === 'display') return; // Display cannot change score
+      if (state.matchWinner) return;
+
+      recordStateForUndo();
+      const scoringTeam = teamId === 'A' ? state.teamA : state.teamB;
+      const otherTeam = teamId === 'A' ? state.teamB : state.teamA;
+
+      scoringTeam.score += 1;
+
+      // Serving Rule: The side that wins the rally wins a point and becomes/remains the server
+      state.servingTeam = teamId;
+
+      triggerHaptic(35);
+      playBeep(750, 0.09);
+
+      // Check 11-point Interval
+      if (!state.intervalTriggered && scoringTeam.score === 11) {
+        state.intervalTriggered = true;
+        showIntervalAlert();
+        playBeep(900, 0.25, 'triangle');
+      }
+
+      // Check Game Win Condition
+      checkGameStatus(scoringTeam, otherTeam);
+
+      syncState();
+      renderUI();
+    }
+
+    function decrementScore(side, e) {
+      if (e) e.stopPropagation();
+      if (state.mode === 'display') return;
+      if (state.matchWinner) return;
+
+      const teamId = side === 'left' ? state.courtLeft : state.courtRight;
+      const team = teamId === 'A' ? state.teamA : state.teamB;
+
+      if (team.score > 0) {
+        recordStateForUndo();
+        team.score -= 1;
+        triggerHaptic([30, 40, 30]);
+        playBeep(420, 0.1);
+        syncState();
+        renderUI();
+      }
+    }
+
+    function checkGameStatus(scoringTeam, otherTeam) {
+      const s = scoringTeam.score;
+      const o = otherTeam.score;
+
+      // Win if: >= 21 pts and lead by >= 2, OR sudden death at 30 pts
+      const hasWonGame = (s >= state.targetScore && s - o >= 2) || (s === state.maxScore);
+
+      if (hasWonGame) {
+        scoringTeam.setsWon += 1;
+        triggerHaptic([100, 80, 150]);
+        playBeep(1100, 0.35, 'square');
+
+        // Check Match Win (Best of 3 -> 2 sets)
+        if (scoringTeam.setsWon >= state.setsToWin) {
+          state.matchWinner = scoringTeam.name;
+          showWinnerCelebration(scoringTeam.name);
+        } else {
+          // Advance to next game and auto-prompt swap
+          setTimeout(() => {
+            const nextGamePrompt = confirm(`${scoringTeam.name} wins Game ${state.gameNumber} (${s}-${o})!\n\nStart Game ${state.gameNumber + 1} and swap court sides?`);
+            if (nextGamePrompt) {
+              state.gameNumber += 1;
+              state.teamA.score = 0;
+              state.teamB.score = 0;
+              state.intervalTriggered = false;
+              switchEnds(false); // auto swap ends for next game
+              syncState();
+              renderUI();
+            }
+          }, 400);
+        }
+      }
+    }
+
+    function undoLastAction() {
+      if (state.mode === 'display') return;
+      if (state.history.length === 0) return;
+
+      const previous = state.history.pop();
+      state.teamA = { ...previous.teamA };
+      state.teamB = { ...previous.teamB };
+      state.courtLeft = previous.courtLeft;
+      state.courtRight = previous.courtRight;
+      state.servingTeam = previous.servingTeam;
+      state.gameNumber = previous.gameNumber;
+      state.intervalTriggered = previous.intervalTriggered;
+      state.matchWinner = previous.matchWinner;
+
+      triggerHaptic([30, 30]);
+      playBeep(500, 0.08);
+      syncState();
+      renderUI();
+    }
+
+    function switchEnds(withVibrate = true) {
+      if (state.mode === 'display') return;
+      recordStateForUndo();
+
+      // Swap court assignments
+      const temp = state.courtLeft;
+      state.courtLeft = state.courtRight;
+      state.courtRight = temp;
+
+      if (withVibrate) {
+        triggerHaptic(50);
+        playBeep(650, 0.12);
+      }
+      syncState();
+      renderUI();
+    }
+
+    function toggleServerManual() {
+      if (state.mode === 'display') return;
+      recordStateForUndo();
+      state.servingTeam = state.servingTeam === 'A' ? 'B' : 'A';
+      triggerHaptic(30);
+      playBeep(700, 0.07);
+      syncState();
+      renderUI();
+    }
+
+    function resetMatch(force = false) {
+      if (state.mode === 'display') return;
+      if (!force && !confirm('Are you sure you want to reset the entire match?')) return;
+
+      recordStateForUndo();
+      state.teamA.score = 0;
+      state.teamA.setsWon = 0;
+      state.teamB.score = 0;
+      state.teamB.setsWon = 0;
+      state.gameNumber = 1;
+      state.intervalTriggered = false;
+      state.matchWinner = null;
+      state.servingTeam = 'A';
+
+      closeWinnerOverlay();
+      dismissIntervalAlert();
+      syncState();
+      renderUI();
+    }
+
+    function confirmReset() {
+      resetMatch(false);
+    }
+
+    /* =================================================================
+     * UI RENDERING
+     * ================================================================= */
+    function renderUI() {
+      const leftTeam = state.courtLeft === 'A' ? state.teamA : state.teamB;
+      const rightTeam = state.courtRight === 'A' ? state.teamA : state.teamB;
+
+      // Update Names
+      document.getElementById('name-left').textContent = leftTeam.name;
+      document.getElementById('name-right').textContent = rightTeam.name;
+
+      // Update Scores with pulse animation if changed
+      const scoreLeftEl = document.getElementById('score-left');
+      const scoreRightEl = document.getElementById('score-right');
+
+      if (scoreLeftEl.textContent !== String(leftTeam.score)) {
+        scoreLeftEl.textContent = leftTeam.score;
+        scoreLeftEl.classList.remove('score-pulse');
+        void scoreLeftEl.offsetWidth; // re-flow
+        scoreLeftEl.classList.add('score-pulse');
+      }
+
+      if (scoreRightEl.textContent !== String(rightTeam.score)) {
+        scoreRightEl.textContent = rightTeam.score;
+        scoreRightEl.classList.remove('score-pulse');
+        void scoreRightEl.offsetWidth;
+        scoreRightEl.classList.add('score-pulse');
+      }
+
+      // Update Sets Won Dots
+      updateSetDots('left', leftTeam.setsWon);
+      updateSetDots('right', rightTeam.setsWon);
+
+      // Serving Indicator & Official Court Position (Even = Right Court, Odd = Left Court)
+      renderServerIndicators(leftTeam, rightTeam);
+
+      // Court Colors: Left is always Blue style, Right is Red style
+      const leftEl = document.getElementById('side-left');
+      const rightEl = document.getElementById('side-right');
+      leftEl.className = `court-side relative flex flex-col justify-between p-4 sm:p-6 lg:p-8 cursor-pointer select-none overflow-hidden ${leftTeam.color === 'blue' ? 'bg-blue-700' : 'bg-red-700'} border-b-4 md:border-b-0 md:border-r-4 border-slate-950/30`;
+      rightEl.className = `court-side relative flex flex-col justify-between p-4 sm:p-6 lg:p-8 cursor-pointer select-none overflow-hidden ${rightTeam.color === 'blue' ? 'bg-blue-700' : 'bg-red-700'}`;
+
+      // Server Glow Box effect
+      if (state.servingTeam === leftTeam.id) {
+        leftEl.classList.add('server-glow');
+        rightEl.classList.remove('server-glow');
+      } else {
+        rightEl.classList.add('server-glow');
+        leftEl.classList.remove('server-glow');
+      }
+
+      // Match game round text
+      document.getElementById('game-round-badge').textContent = `Game ${state.gameNumber} (to ${state.targetScore})`;
+    }
+
+    function updateSetDots(side, wonCount) {
+      const dot1 = document.querySelector(`.set-dot-${side}-1`);
+      const dot2 = document.querySelector(`.set-dot-${side}-2`);
+      if (!dot1 || !dot2) return;
+
+      if (wonCount >= 1) {
+        dot1.className = `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`;
+      } else {
+        dot1.className = `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
+      }
+
+      if (wonCount >= 2) {
+        dot2.className = `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`;
+      } else {
+        dot2.className = `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
+      }
+    }
+
+    function renderServerIndicators(leftTeam, rightTeam) {
+      const serverBadgeLeft = document.getElementById('server-badge-left');
+      const serverBadgeRight = document.getElementById('server-badge-right');
+      const serveTextLeft = document.getElementById('serve-side-text-left');
+      const serveTextRight = document.getElementById('serve-side-text-right');
+
+      const isLeftServing = state.servingTeam === leftTeam.id;
+
+      if (isLeftServing) {
+        serverBadgeLeft.classList.remove('hidden');
+        serverBadgeRight.classList.add('hidden');
+        const courtBox = (leftTeam.score % 2 === 0) ? 'RIGHT' : 'LEFT';
+        serveTextLeft.textContent = `SERVE (${courtBox})`;
+      } else {
+        serverBadgeRight.classList.remove('hidden');
+        serverBadgeLeft.classList.add('hidden');
+        const courtBox = (rightTeam.score % 2 === 0) ? 'RIGHT' : 'LEFT';
+        serveTextRight.textContent = `SERVE (${courtBox})`;
+      }
+    }
+
+    /* =================================================================
+     * TOUCH, GESTURE & CLICK HANDLING (CONTROLLER MODE)
+     * ================================================================= */
+    let touchStartY = 0;
+    let touchStartX = 0;
+    let touchStartTime = 0;
+
+    function handleSideClick(side, event) {
+      if (state.mode === 'display') return; // Locked on display
+      if (isTouchLocked) return;
+
+      createRipple(event, side);
+      const teamId = side === 'left' ? state.courtLeft : state.courtRight;
+      addScore(teamId);
+    }
+
+    // Touch gesture listener on sides for Swipe Down = -1
+    ['side-left', 'side-right'].forEach(id => {
+      const el = document.getElementById(id);
+
+      el.addEventListener('touchstart', (e) => {
+        if (state.mode === 'display' || isTouchLocked) return;
+        const touch = e.changedTouches[0];
+        touchStartY = touch.clientY;
+        touchStartX = touch.clientX;
+        touchStartTime = Date.now();
+      }, { passive: true });
+
+      el.addEventListener('touchend', (e) => {
+        if (state.mode === 'display' || isTouchLocked) return;
+        const touch = e.changedTouches[0];
+        const deltaY = touch.clientY - touchStartY;
+        const deltaX = touch.clientX - touchStartX;
+        const duration = Date.now() - touchStartTime;
+
+        // Detect Swipe Down gesture: vertical distance > 50px, predominantly downwards
+        if (deltaY > 55 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && duration < 500) {
+          const side = el.getAttribute('data-side');
+          decrementScore(side, e);
+          e.preventDefault();
+        }
+      }, { passive: false });
+    });
+
+    function createRipple(e, side) {
+      const target = document.getElementById(`side-${side}`);
+      if (!target) return;
+      const ripple = document.createElement('span');
+      ripple.classList.add('ripple');
+      const rect = target.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : rect.left + rect.width / 2);
+      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : rect.top + rect.height / 2);
+
+      ripple.style.width = ripple.style.height = `${size}px`;
+      ripple.style.left = `${clientX - rect.left - size / 2}px`;
+      ripple.style.top = `${clientY - rect.top - size / 2}px`;
+      target.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    }
+
+    /* =================================================================
+     * INTERVAL & WINNER CELEBRATION
+     * ================================================================= */
+    function showIntervalAlert() {
+      const banner = document.getElementById('interval-alert-banner');
+      banner.classList.remove('hidden');
+      setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 10000); // Auto hide after 10s or user dismiss
+    }
+
+    function dismissIntervalAlert() {
+      document.getElementById('interval-alert-banner').classList.add('hidden');
+    }
+
+    function showWinnerCelebration(winnerName) {
+      const overlay = document.getElementById('match-winner-overlay');
+      const title = document.getElementById('winner-team-title');
+      const summary = document.getElementById('winner-match-summary');
+
+      title.textContent = `${winnerName} WINS!`;
+      summary.textContent = `Match Finished (${state.teamA.setsWon} - ${state.teamB.setsWon})`;
+      overlay.classList.remove('hidden');
+
+      // Fire festive confetti
+      if (typeof confetti === 'function') {
+        const end = Date.now() + 2500;
+        const colors = ['#3B82F6', '#EF4444', '#FBBF24', '#10B981'];
+        (function frame() {
+          confetti({
+            particleCount: 4,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+            colors: colors
+          });
+          confetti({
+            particleCount: 4,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+            colors: colors
+          });
+          if (Date.now() < end) {
+            requestAnimationFrame(frame);
+          }
+        }());
+      }
+    }
+
+    function closeWinnerOverlay() {
+      document.getElementById('match-winner-overlay').classList.add('hidden');
+    }
+
+    /* =================================================================
+     * TEAM NAME EDITING
+     * ================================================================= */
+    function editTeamName(side, e) {
+      if (e) e.stopPropagation();
+      if (state.mode === 'display') return;
+
+      activeEditingSide = side;
+      const teamId = side === 'left' ? state.courtLeft : state.courtRight;
+      const team = teamId === 'A' ? state.teamA : state.teamB;
+
+      document.getElementById('rename-input').value = team.name;
+      document.getElementById('rename-modal').classList.remove('hidden');
+      document.getElementById('rename-input').focus();
+    }
+
+    function saveTeamName() {
+      const newName = document.getElementById('rename-input').value.trim();
+      if (newName && activeEditingSide) {
+        const teamId = activeEditingSide === 'left' ? state.courtLeft : state.courtRight;
+        const team = teamId === 'A' ? state.teamA : state.teamB;
+        team.name = newName.toUpperCase();
+        syncState();
+        renderUI();
+      }
+      closeRenameModal();
+    }
+
+    function closeRenameModal() {
+      document.getElementById('rename-modal').classList.add('hidden');
+      activeEditingSide = null;
+    }
+
+    /* =================================================================
+     * PEER-TO-PEER WEBRTC SYNCHRONIZATION (PEERJS)
+     * ================================================================= */
+    function generate6DigitPin() {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    // Sync State from Controller to all connected Displays
+    function syncState() {
+      if (state.mode === 'controller' && peerConnections.length > 0) {
+        const payload = JSON.stringify({ type: 'SCORE_UPDATE', data: state });
+        peerConnections.forEach(conn => {
+          if (conn.open) conn.send(payload);
+        });
+      }
+    }
+
+    // Host Controller Session
+    function initControllerMode() {
+      state.mode = 'controller';
+      if (!state.roomPin) state.roomPin = generate6DigitPin();
+
+      updateModeBadge('Controller', 'bg-indigo-500');
+      document.getElementById('room-pin-pill').classList.remove('hidden');
+      document.getElementById('top-bar-pin').textContent = state.roomPin;
+      document.getElementById('modal-pin-display').textContent = state.roomPin;
+      document.getElementById('bottom-bar').classList.remove('hidden');
+      document.getElementById('display-mode-shield').classList.add('hidden');
+
+      // Generate QR Code with direct URL
+      generateQRCode();
+
+      // Initialize PeerJS Host
+      const peerId = PEER_PREFIX + state.roomPin;
+      if (peer) peer.destroy();
+
+      peer = new Peer(peerId, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+
+      peer.on('open', (id) => {
+        console.log('Controller Peer connected:', id);
+        updateModeBadge('Controller (Live)', 'bg-emerald-500');
+      });
+
+      peer.on('connection', (conn) => {
+        peerConnections.push(conn);
+        conn.on('open', () => {
+          console.log('Courtside iPad display connected!');
+          updateModeBadge(`Controller (${peerConnections.length} Display)`, 'bg-emerald-500');
+          // Immediately send full state
+          conn.send(JSON.stringify({ type: 'SCORE_UPDATE', data: state }));
+        });
+
+        conn.on('close', () => {
+          peerConnections = peerConnections.filter(c => c !== conn);
+          updateModeBadge(`Controller (${peerConnections.length} Display)`, 'bg-indigo-500');
+        });
+      });
+
+      peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        if (err.type === 'unavailable-id') {
+          // If ID collision, generate new pin and retry
+          state.roomPin = generate6DigitPin();
+          initControllerMode();
+        }
+      });
+    }
+
+    // Connect as Display Mode (iPad)
+    function initDisplayMode(roomPin) {
+      state.mode = 'display';
+      state.roomPin = roomPin;
+
+      // Lock UI for Display
+      document.getElementById('bottom-bar').classList.add('hidden');
+      document.getElementById('display-mode-shield').classList.remove('hidden');
+      document.getElementById('room-pin-pill').classList.add('hidden');
+      updateModeBadge(`Display (PIN: ${roomPin})`, 'bg-emerald-500');
+
+      // Auto-enable Wake Lock on iPad display
+      requestWakeLock();
+
+      const hostPeerId = PEER_PREFIX + roomPin;
+      if (peer) peer.destroy();
+
+      // Random peer ID for the display client
+      peer = new Peer({
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+
+      peer.on('open', (myId) => {
+        console.log('Display peer created:', myId);
+        connectToHost(hostPeerId);
+      });
+
+      peer.on('error', (err) => {
+        console.error('Display peer error:', err);
+        updateModeBadge('Connection Error', 'bg-rose-500');
+      });
+    }
+
+    function connectToHost(hostPeerId) {
+      updateModeBadge('Connecting...', 'bg-amber-500');
+      displayConn = peer.connect(hostPeerId, { reliable: true });
+
+      displayConn.on('open', () => {
+        console.log('Successfully paired with Controller!');
+        updateModeBadge('Display (Live Sync)', 'bg-emerald-500');
+        closeDisplayConnectModal();
+      });
+
+      displayConn.on('data', (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.type === 'SCORE_UPDATE') {
+            // Mirror Controller state
+            state.teamA = msg.data.teamA;
+            state.teamB = msg.data.teamB;
+            state.courtLeft = msg.data.courtLeft;
+            state.courtRight = msg.data.courtRight;
+            state.servingTeam = msg.data.servingTeam;
+            state.gameNumber = msg.data.gameNumber;
+            state.targetScore = msg.data.targetScore;
+            state.intervalTriggered = msg.data.intervalTriggered;
+            state.matchWinner = msg.data.matchWinner;
+
+            if (state.intervalTriggered) showIntervalAlert();
+            if (state.matchWinner) showWinnerCelebration(state.matchWinner);
+
+            renderUI();
+          }
+        } catch (e) {
+          console.error('Error handling data:', e);
+        }
+      });
+
+      displayConn.on('close', () => {
+        console.warn('Connection closed. Auto-reconnecting in 3s...');
+        updateModeBadge('Reconnecting...', 'bg-amber-500');
+        setTimeout(() => connectToHost(hostPeerId), 3000);
+      });
+    }
+
+    function generateQRCode() {
+      const container = document.getElementById('qrcode-canvas');
+      container.innerHTML = '';
+      const url = getDisplayDirectURL();
+      new QRCode(container, {
+        text: url,
+        width: 176,
+        height: 176,
+        colorDark: "#020617",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    function getDisplayDirectURL() {
+      const base = window.location.origin + window.location.pathname;
+      return `${base}?mode=display&room=${state.roomPin}`;
+    }
+
+    function copyDisplayLink() {
+      const url = getDisplayDirectURL();
+      navigator.clipboard.writeText(url).then(() => {
+        const text = document.getElementById('copy-link-text');
+        text.textContent = 'Copied to Clipboard!';
+        setTimeout(() => { text.textContent = 'Copy Instant Link'; }, 2000);
+      }).catch(() => {
+        prompt('Copy this link for iPad:', url);
+      });
+    }
+
+    /* =================================================================
+     * MODALS, LOCKS & SYSTEM UTILITIES
+     * ================================================================= */
+    function openMenuModal() { document.getElementById('menu-modal').classList.remove('hidden'); }
+    function closeMenuModal() { document.getElementById('menu-modal').classList.add('hidden'); }
+    function openPairModal() { openPairModalWithRefresh(); }
+    function openPairModalWithRefresh() {
+      generateQRCode();
+      document.getElementById('pair-modal').classList.remove('hidden');
+    }
+    function closePairModal() { document.getElementById('pair-modal').classList.add('hidden'); }
+
+    function openDisplayConnectModal() {
+      document.getElementById('display-connect-modal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('input-room-pin').focus(), 150);
+    }
+    function closeDisplayConnectModal() {
+      document.getElementById('display-connect-modal').classList.add('hidden');
+    }
+
+    function selectMode(chosen) {
+      closeMenuModal();
+      if (chosen === 'controller') {
+        initControllerMode();
+        openPairModalWithRefresh();
+      } else if (chosen === 'display') {
+        openDisplayConnectModal();
+      } else {
+        // Standalone
+        state.mode = 'standalone';
+        if (peer) peer.destroy();
+        updateModeBadge('Standalone', 'bg-slate-500');
+        document.getElementById('room-pin-pill').classList.add('hidden');
+        document.getElementById('bottom-bar').classList.remove('hidden');
+        document.getElementById('display-mode-shield').classList.add('hidden');
+      }
+    }
+
+    function connectAsDisplay() {
+      const pin = document.getElementById('input-room-pin').value.trim();
+      const errorEl = document.getElementById('display-connect-error');
+      if (!pin || pin.length !== 6) {
+        errorEl.textContent = 'Please enter a valid 6-digit PIN code.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+      errorEl.classList.add('hidden');
+      initDisplayMode(pin);
+    }
+
+    function updateModeBadge(text, colorClass) {
+      document.getElementById('mode-badge-text').textContent = text;
+      const dot = document.querySelector('#mode-badge span:first-child');
+      dot.className = `w-2 h-2 rounded-full ${colorClass}`;
+    }
+
+    function toggleTouchLock() {
+      isTouchLocked = !isTouchLocked;
+      const overlay = document.getElementById('touch-lock-overlay');
+      const iconUnlocked = document.getElementById('icon-unlocked');
+      const iconLocked = document.getElementById('icon-locked');
+
+      if (isTouchLocked) {
+        overlay.classList.remove('hidden');
+        iconUnlocked.classList.add('hidden');
+        iconLocked.classList.remove('hidden');
+        triggerHaptic(50);
+      } else {
+        overlay.classList.add('hidden');
+        iconUnlocked.classList.remove('hidden');
+        iconLocked.classList.add('hidden');
+      }
+    }
+
+    // Screen Wake Lock API
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Screen Wake Lock acquired');
+          document.getElementById('btn-wakelock').classList.add('border-emerald-500');
+          wakeLock.addEventListener('release', () => {
+            console.log('Screen Wake Lock released');
+            document.getElementById('btn-wakelock').classList.remove('border-emerald-500');
+          });
+        } catch (err) {
+          console.warn('Wake Lock error:', err);
+        }
+      }
+    }
+
+    function toggleWakeLockManual() {
+      if (wakeLock !== null) {
+        wakeLock.release().then(() => wakeLock = null);
+      } else {
+        requestWakeLock();
+      }
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      const btn = document.getElementById('toggle-sound-btn');
+      btn.textContent = `Sound: ${soundEnabled ? 'ON' : 'OFF'}`;
+      btn.className = `px-3 py-1 rounded-lg ${soundEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'} border border-slate-700 font-semibold`;
+      if (soundEnabled) playBeep(800, 0.1);
+    }
+
+    // Keyboard Shortcuts for quick scoring / testing
+    window.addEventListener('keydown', (e) => {
+      if (document.activeElement.tagName === 'INPUT') return;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        addScore(state.courtLeft);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        addScore(state.courtRight);
+      } else if (e.key === 'z' || e.key === 'Z') {
+        undoLastAction();
+      } else if (e.key === 's' || e.key === 'S') {
+        switchEnds();
+      }
+    });
+
+    /* =================================================================
+     * AUTO-BOOTSTRAP (URL Query Parameters Check)
+     * ================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const modeParam = urlParams.get('mode');
+      const roomParam = urlParams.get('room');
+
+      renderUI();
+
+      // If opened via QR code or direct link with room param
+      if (modeParam === 'display' && roomParam) {
+        initDisplayMode(roomParam);
+      } else if (modeParam === 'controller') {
+        initControllerMode();
+      } else {
+        // Default standalone, auto-request wake lock
+        requestWakeLock();
+      }
+    });
+
+    // Re-acquire Wake Lock when tab becomes visible again
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && state.mode === 'display') {
+        await requestWakeLock();
+      }
+    });
+  </script>
+</body>
+</html>
