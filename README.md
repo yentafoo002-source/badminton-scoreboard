@@ -12,7 +12,7 @@ A modern, responsive, and serverless **Badminton Scoreboard Web Application** de
   - **Swipe Down on a side:** Subtracts -1 point from that side.
   - **Haptic Vibration:** Haptic feedback on score changes so you never need to take your eyes off the match.
   - **Accidental Touch Lock:** One-tap lock screen mode when holding the phone in hand or pocket.
-  - **Quick Action Bar:** `Undo`, `Swap Ends` (สลับฝั่ง), `Toggle Serve`, and `Reset Match`.
+  - **Quick Action Bar:** `Undo`, `Swap Ends` (สลับฝั่ง), `Toggle Serve`, `Break Timer`, and `Reset Match`.
   
 - **Display Mode (iPad / TV / Monitor):** Placed courtside for players and spectators.
   - **100% Read-Only & Touch-Immune:** All touch and click events are shielded to prevent accidental tampering when balls or players hit the screen.
@@ -29,10 +29,13 @@ A modern, responsive, and serverless **Badminton Scoreboard Web Application** de
 
 ---
 
-### 3. Official Badminton Rules Built-in
-- **21 Points per Game (Best of 3 Sets)**.
+### 3. Official BWF Rules & Smart Umpire
+- **21 Points per Game (Best of 3 Sets)** (Customizable to 15 or 11 points).
 - **Deuce Logic:** At 20–20, a team must lead by 2 points. Hard-cap at 30 points (sudden death at 29–29).
-- **11-Point Interval Banner:** Automatic visual alert for the official 60-second rest break when either side reaches 11 points.
+- **Game Point & Match Point Indicators:** Visual badges (`🔥 GAME POINT` / `🏆 MATCH POINT`) highlight critical moments.
+- **Interactive Break Countdown Timer:** 60-second Interval at 11 points and 120-second Game Break with circular countdown and audio buzzer!
+- **Voice Umpire (Speech Synthesis):** Automatic score announcements in Thai (🇹🇭) or English (🇬🇧) following BWF serving order.
+- **Past Sets Tracker:** Displays summary of previous set scores (e.g. `G1: 21-18 | G2: 19-21`).
 - **Server & Court Indicator:** Shuttlecock icon (🏸) indicates the serving side, along with **Right Court (Even Score)** or **Left Court (Odd Score)**.
 - **Match Winner Celebration:** Confetti celebration when a team wins 2 sets.
 
@@ -66,11 +69,12 @@ Then find your computer's local IP (e.g. `192.168.1.XX:8080`) to open it on both
 To make it accessible to everyone anywhere in the world on cellular 4G/5G or gym Wi-Fi:
 
 ### Option A: GitHub Pages (Free forever)
-1. Push this folder to a GitHub repository.
+1. Push this folder to your GitHub repository.
 2. Go to **Settings -> Pages**.
 3. Under **Branch**, select `main` and root `/`, then click **Save**.
 4. Your scoreboard will be live at `https://<username>.github.io/<repo-name>/`.
 
-### Option B: Vercel / Netlify (Drop to Deploy)
-1. Drag and drop this folder directly into [Netlify Drop](https://app.netlify.com/drop) or [Vercel](https://vercel.com).
-2. It deploys in 5 seconds with an HTTPS URL.
+### Option B: Vercel (https://badminton-live-score.vercel.app)
+1. Import this repository in [Vercel](https://vercel.com/new).
+2. Set Project Name to `badminton-live-score` (or any custom domain).
+3. Click **Deploy**. Vercel will automatically read `vercel.json` and deploy in 5 seconds with an HTTPS URL.

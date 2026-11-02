@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Badminton Live">
   <meta name="theme-color" content="#0F172A">
+  <link rel="manifest" href="manifest.json">
   <title>Badminton Live Scoreboard</title>
 
   <!-- Tailwind CSS CDN -->
@@ -61,19 +63,26 @@
 
     /* Glowing border for server side */
     .server-glow {
-      box-shadow: inset 0 0 40px rgba(250, 204, 21, 0.45), 0 0 25px rgba(250, 204, 21, 0.35);
+      box-shadow: inset 0 0 45px rgba(250, 204, 21, 0.5), 0 0 30px rgba(250, 204, 21, 0.4);
     }
 
     /* Smooth transitions */
     .court-side {
       transition: background-color 0.4s ease, transform 0.3s ease;
     }
+
+    /* Custom circular timer animation */
+    .timer-ring-circle {
+      transition: stroke-dashoffset 1s linear;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-white min-h-screen w-screen overflow-hidden select-none flex flex-col font-sans">
 
   <!-- ================= TOP NAVIGATION / STATUS BAR ================= -->
-  <header id="top-bar" class="z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-3 py-2 flex items-center justify-between transition-all duration-300">
+  <header id="top-bar" class="z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 py-2 flex items-center justify-between transition-all duration-300">
     <!-- Left: Brand & Room PIN -->
     <div class="flex items-center gap-2">
       <div class="flex items-center gap-1.5 font-bold tracking-wider text-sm sm:text-base">
@@ -82,27 +91,34 @@
       </div>
 
       <!-- Mode Badge -->
-      <span id="mode-badge" class="ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
+      <span id="mode-badge" class="ml-1 sm:ml-2 text-xs font-semibold px-2 sm:px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
         <span class="w-2 h-2 rounded-full bg-slate-500"></span>
         <span id="mode-badge-text">Standalone</span>
       </span>
 
       <!-- Room PIN Tag (Shown in Controller mode) -->
-      <button id="room-pin-pill" onclick="openPairModal()" class="hidden text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition flex items-center gap-1.5 cursor-pointer">
+      <button id="room-pin-pill" onclick="openPairModal()" class="hidden text-xs font-mono font-bold px-2 sm:px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition flex items-center gap-1.5 cursor-pointer">
         <span>PIN:</span>
         <span id="top-bar-pin" class="tracking-widest">------</span>
         <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
       </button>
     </div>
 
-    <!-- Center: Match Game / Interval Info -->
-    <div id="match-status-center" class="hidden sm:flex items-center gap-3 text-xs md:text-sm font-medium text-slate-300">
-      <span id="game-round-badge" class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700">Game 1 (21 pts)</span>
-      <span id="match-interval-badge" class="hidden px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/40 animate-pulse font-bold">INTERVAL (60s)</span>
+    <!-- Center: Match Game & Past Sets Summary -->
+    <div id="match-status-center" class="hidden sm:flex items-center gap-2 text-xs md:text-sm font-medium text-slate-300">
+      <span id="game-round-badge" class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 font-semibold">Game 1 (21 pts)</span>
+      <span id="past-sets-badge" class="hidden px-2 py-0.5 bg-slate-800/90 rounded border border-amber-500/30 font-mono text-amber-300 text-xs font-bold"></span>
+      <span id="match-interval-badge" class="hidden px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/40 animate-pulse font-bold cursor-pointer" onclick="openTimerModal(60, '11-Point Interval')">INTERVAL (60s)</span>
     </div>
 
     <!-- Right: Quick Controls -->
     <div class="flex items-center gap-1.5 sm:gap-2">
+      <!-- Quick Break Timer Button -->
+      <button onclick="openTimerModal(60, 'Rest Break')" title="Start Rest Break Timer" class="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition flex items-center gap-1">
+        <span class="text-xs sm:text-sm">⏱️</span>
+        <span class="hidden md:inline text-xs font-semibold text-slate-300">Break</span>
+      </button>
+
       <!-- Lock Screen Button (Controller mode) -->
       <button id="btn-touch-lock" onclick="toggleTouchLock()" title="Lock Screen (Prevent Accidental Taps)" class="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
         <svg id="icon-unlocked" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
@@ -130,22 +146,8 @@
   <!-- ================= NOTIFICATION / INTERVAL BANNER ================= -->
   <div id="interval-alert-banner" class="hidden z-20 bg-amber-500 text-slate-950 font-extrabold text-center py-2 px-4 shadow-lg text-sm sm:text-base tracking-wide flex items-center justify-center gap-2">
     <span>⏱️ 11-POINT INTERVAL (60-SECOND REST BREAK)</span>
-    <button onclick="dismissIntervalAlert()" class="ml-3 px-2 py-0.5 rounded bg-slate-950 text-amber-400 text-xs font-semibold hover:bg-slate-900">Dismiss</button>
-  </div>
-
-  <!-- ================= MATCH WINNER OVERLAY ================= -->
-  <div id="match-winner-overlay" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-    <div class="text-6xl mb-4 animate-bounce">🏆</div>
-    <h2 id="winner-team-title" class="text-4xl sm:text-6xl font-black tracking-tight mb-2 text-yellow-400">TEAM BLUE WINS!</h2>
-    <p id="winner-match-summary" class="text-xl sm:text-2xl text-slate-300 font-semibold mb-8">Sets: 2 - 0 (21-18, 21-15)</p>
-    <div class="flex flex-wrap items-center justify-center gap-4">
-      <button onclick="resetMatch(true)" class="px-8 py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-lg shadow-xl shadow-amber-500/30 transition transform hover:scale-105">
-        Start New Match
-      </button>
-      <button onclick="closeWinnerOverlay()" class="px-6 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-lg border border-slate-700 transition">
-        View Final Scoreboard
-      </button>
-    </div>
+    <button onclick="openTimerModal(60, '11-Point Interval')" class="ml-2 px-3 py-0.5 rounded bg-slate-950 text-amber-400 text-xs font-bold hover:bg-slate-900 transition">Start Timer</button>
+    <button onclick="dismissIntervalAlert()" class="ml-1 px-2 py-0.5 rounded bg-black/30 text-slate-950 text-xs font-semibold hover:bg-black/40">Dismiss</button>
   </div>
 
   <!-- ================= MAIN SCOREBOARD CONTAINER ================= -->
@@ -174,9 +176,14 @@
         </div>
       </div>
 
-      <!-- Center: Massive Score Display -->
-      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-2">
-        <span id="score-left" class="score-digit text-[28vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
+      <!-- Center: Massive Score Display + Point Alert -->
+      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-1 sm:my-2">
+        <!-- Game Point / Match Point Alert Badge -->
+        <div id="point-alert-left" class="hidden text-xs sm:text-sm font-black px-3.5 py-1 rounded-full bg-amber-400 text-slate-950 uppercase tracking-widest shadow-xl animate-bounce mb-1 sm:mb-2 border border-yellow-200">
+          🔥 GAME POINT
+        </div>
+
+        <span id="score-left" class="score-digit text-[26vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
           0
         </span>
         <div class="text-xs sm:text-sm font-semibold tracking-wider text-blue-200/80 uppercase">
@@ -187,7 +194,7 @@
       <!-- Bottom Bar of Side 1: Sets Won -->
       <div class="z-10 flex items-center justify-between w-full">
         <div class="flex items-center gap-1.5 sm:gap-2">
-          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-blue-100/90">GAMES WON:</span>
+          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-blue-100/90">GAMES:</span>
           <div id="sets-container-left" class="flex items-center gap-1.5">
             <span class="set-dot-left-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
             <span class="set-dot-left-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
@@ -224,9 +231,14 @@
         </div>
       </div>
 
-      <!-- Center: Massive Score Display -->
-      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-2">
-        <span id="score-right" class="score-digit text-[28vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
+      <!-- Center: Massive Score Display + Point Alert -->
+      <div class="z-10 flex-1 flex flex-col items-center justify-center relative my-1 sm:my-2">
+        <!-- Game Point / Match Point Alert Badge -->
+        <div id="point-alert-right" class="hidden text-xs sm:text-sm font-black px-3.5 py-1 rounded-full bg-amber-400 text-slate-950 uppercase tracking-widest shadow-xl animate-bounce mb-1 sm:mb-2 border border-yellow-200">
+          🔥 GAME POINT
+        </div>
+
+        <span id="score-right" class="score-digit text-[26vw] md:text-[22vw] lg:text-[20vw] leading-none font-black tracking-tighter text-white drop-shadow-2xl">
           0
         </span>
         <div class="text-xs sm:text-sm font-semibold tracking-wider text-red-200/80 uppercase">
@@ -237,7 +249,7 @@
       <!-- Bottom Bar of Side 2: Sets Won -->
       <div class="z-10 flex items-center justify-between w-full">
         <div class="flex items-center gap-1.5 sm:gap-2">
-          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-red-100/90">GAMES WON:</span>
+          <span class="text-xs sm:text-sm font-bold uppercase tracking-wider text-red-100/90">GAMES:</span>
           <div id="sets-container-right" class="flex items-center gap-1.5">
             <span class="set-dot-right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
             <span class="set-dot-right-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition"></span>
@@ -272,89 +284,133 @@
   <!-- ================= BOTTOM ACTION BAR (CONTROLLER MODE ONLY) ================= -->
   <footer id="bottom-bar" class="z-30 bg-slate-950/95 border-t border-slate-800 px-3 py-2 flex items-center justify-around gap-2 text-xs sm:text-sm">
     <!-- Undo Button -->
-    <button onclick="undoLastAction()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+    <button onclick="undoLastAction()" class="flex-1 py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-1.5 transition">
       <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
       <span>Undo</span>
     </button>
 
     <!-- Switch Ends (สลับฝั่ง) -->
-    <button onclick="switchEnds()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+    <button onclick="switchEnds()" class="flex-1 py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-1.5 transition">
       <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-      <span>Swap Ends</span>
+      <span>Swap</span>
     </button>
 
     <!-- Switch Server -->
-    <button onclick="toggleServerManual()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+    <button onclick="toggleServerManual()" class="flex-1 py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-800 font-semibold flex items-center justify-center gap-1.5 transition">
       <span class="text-sm">🏸</span>
-      <span>Toggle Serve</span>
+      <span>Serve</span>
+    </button>
+
+    <!-- Interval / Rest Break Timer -->
+    <button onclick="openTimerModal(60, 'Rest Break')" class="flex-1 py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-amber-300 border border-slate-800 font-semibold flex items-center justify-center gap-1.5 transition">
+      <span class="text-sm">⏱️</span>
+      <span>Break</span>
     </button>
 
     <!-- Reset Match Button -->
-    <button onclick="confirmReset()" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-rose-950 active:bg-rose-900 text-rose-300 border border-slate-800 font-semibold flex items-center justify-center gap-2 transition">
+    <button onclick="confirmReset()" class="flex-1 py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-rose-950 active:bg-rose-900 text-rose-300 border border-slate-800 font-semibold flex items-center justify-center gap-1.5 transition">
       <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
       <span>Reset</span>
     </button>
   </footer>
 
   <!-- ================= OPTIONS / MODE SELECTOR MODAL ================= -->
-  <div id="menu-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+  <div id="menu-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl relative my-auto max-h-[92vh] overflow-y-auto">
       <!-- Close Button -->
       <button onclick="closeMenuModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
 
-      <div class="flex items-center gap-2 mb-5">
+      <div class="flex items-center gap-2 mb-4">
         <span class="text-2xl">🏸</span>
-        <h3 class="text-xl font-black text-white">Mode & Connection</h3>
+        <h3 class="text-xl font-black text-white">Settings & Modes</h3>
       </div>
 
       <!-- Mode Selection Cards -->
-      <div class="space-y-3 mb-6">
+      <div class="space-y-2.5 mb-5">
         <!-- Option 1: Controller Mode (Phone) -->
-        <div onclick="selectMode('controller')" class="cursor-pointer p-4 rounded-2xl bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-indigo-700/50 hover:border-indigo-500 transition flex items-start gap-3.5">
-          <div class="p-2.5 rounded-xl bg-indigo-600 text-white mt-0.5">
+        <div onclick="selectMode('controller')" class="cursor-pointer p-3.5 rounded-2xl bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-indigo-700/50 hover:border-indigo-500 transition flex items-start gap-3">
+          <div class="p-2 rounded-xl bg-indigo-600 text-white mt-0.5">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
           </div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
-              <h4 class="font-extrabold text-white text-base">Controller Mode (มือถือ)</h4>
-              <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">Umpire</span>
+              <h4 class="font-extrabold text-white text-sm sm:text-base">Controller Mode (มือถือ)</h4>
+              <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">Host</span>
             </div>
-            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Host a match and tap/swipe to score. Generates a 6-digit PIN & QR Code for iPad connection.</p>
+            <p class="text-xs text-slate-300 mt-0.5">Host a match, tap to score, generates 6-digit PIN & QR Code for iPad.</p>
           </div>
         </div>
 
         <!-- Option 2: Display Mode (iPad / TV) -->
-        <div onclick="selectMode('display')" class="cursor-pointer p-4 rounded-2xl bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-700/50 hover:border-emerald-500 transition flex items-start gap-3.5">
-          <div class="p-2.5 rounded-xl bg-emerald-600 text-white mt-0.5">
+        <div onclick="selectMode('display')" class="cursor-pointer p-3.5 rounded-2xl bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-700/50 hover:border-emerald-500 transition flex items-start gap-3">
+          <div class="p-2 rounded-xl bg-emerald-600 text-white mt-0.5">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
           </div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
-              <h4 class="font-extrabold text-white text-base">Display Score (ไอแพด)</h4>
+              <h4 class="font-extrabold text-white text-sm sm:text-base">Display Score (ไอแพดข้างสนาม)</h4>
               <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Read-Only</span>
             </div>
-            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Connect to a phone using a 6-digit PIN. Read-only, screen wake locked, and touch-immune.</p>
+            <p class="text-xs text-slate-300 mt-0.5">Connect to phone via PIN. Touch-shielded and screen wake locked.</p>
           </div>
         </div>
 
         <!-- Option 3: Standalone -->
-        <div onclick="selectMode('standalone')" class="cursor-pointer p-4 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-slate-600 transition flex items-start gap-3.5">
-          <div class="p-2.5 rounded-xl bg-slate-700 text-slate-200 mt-0.5">
+        <div onclick="selectMode('standalone')" class="cursor-pointer p-3 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-slate-600 transition flex items-start gap-3">
+          <div class="p-2 rounded-xl bg-slate-700 text-slate-200 mt-0.5">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
           </div>
           <div class="flex-1">
-            <h4 class="font-bold text-white text-base">Standalone Mode (เครื่องเดียว)</h4>
-            <p class="text-xs text-slate-300 mt-1 leading-relaxed">Score on this device without connecting to other devices.</p>
+            <h4 class="font-bold text-white text-sm">Standalone Mode (เครื่องเดียว)</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Score locally without P2P synchronization.</p>
           </div>
         </div>
       </div>
 
-      <!-- Quick Sound / Vibration Settings -->
-      <div class="border-t border-slate-800 pt-4 flex items-center justify-between text-xs text-slate-400">
-        <span>Sound Feedback:</span>
-        <button id="toggle-sound-btn" onclick="toggleSound()" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 font-semibold">Sound: ON</button>
+      <!-- Match Rules Configuration -->
+      <div class="border-t border-slate-800 pt-3.5 mb-4">
+        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Match Rules & Target Score</h4>
+        <div class="grid grid-cols-3 gap-2">
+          <button onclick="setTargetScore(21)" id="btn-target-21" class="py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs border border-amber-400 transition">
+            21 Points (BWF)
+          </button>
+          <button onclick="setTargetScore(15)" id="btn-target-15" class="py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700 hover:bg-slate-700 transition">
+            15 Points
+          </button>
+          <button onclick="setTargetScore(11)" id="btn-target-11" class="py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700 hover:bg-slate-700 transition">
+            11 Points (Fast)
+          </button>
+        </div>
+      </div>
+
+      <!-- Voice Umpire (Speech Synthesis) -->
+      <div class="border-t border-slate-800 pt-3.5 mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider">🎙️ Voice Umpire (ขานคะแนน)</h4>
+            <p class="text-[11px] text-slate-400">ขานคะแนนอัตโนมัติเมื่อแต้มเปลี่ยน</p>
+          </div>
+          <button id="btn-toggle-voice" onclick="toggleVoiceUmpire()" class="px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow transition">
+            Voice: ON
+          </button>
+        </div>
+        <div class="flex items-center gap-2 mt-2">
+          <span class="text-xs text-slate-400">Language:</span>
+          <button onclick="setVoiceLang('th')" id="btn-voice-th" class="px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold text-xs border border-indigo-500 transition">
+            🇹🇭 ภาษาไทย
+          </button>
+          <button onclick="setVoiceLang('en')" id="btn-voice-en" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 font-semibold text-xs border border-slate-700 hover:bg-slate-700 transition">
+            🇬🇧 English
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Sound Feedback -->
+      <div class="border-t border-slate-800 pt-3 flex items-center justify-between text-xs text-slate-400">
+        <span>Beep Audio Feedback:</span>
+        <button id="toggle-sound-btn" onclick="toggleSound()" class="px-3 py-1 rounded-lg bg-indigo-600 text-white border border-indigo-500 font-semibold transition">Sound: ON</button>
       </div>
     </div>
   </div>
@@ -366,7 +422,7 @@
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
 
-      <span class="text-3xl mb-2 inline-block">📲 ⇄ 📟</span>
+      <span class="text-3xl mb-1 inline-block">📲 ⇄ 📟</span>
       <h3 class="text-xl font-black text-white mb-1">Connect Courtside iPad</h3>
       <p class="text-xs text-slate-400 mb-4">Scan QR code with iPad or enter this 6-digit PIN on the iPad screen.</p>
 
@@ -435,6 +491,62 @@
     </div>
   </div>
 
+  <!-- ================= INTERACTIVE REST BREAK & INTERVAL COUNTDOWN MODAL ================= -->
+  <div id="interval-timer-modal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-amber-500/40 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative text-center">
+      <button onclick="dismissTimerModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+      <span class="text-3xl mb-1 inline-block">⏱️</span>
+      <h3 id="timer-modal-title" class="text-xl font-black text-amber-400 mb-0.5">REST BREAK</h3>
+      <p id="timer-modal-desc" class="text-xs text-slate-400 mb-4">Official Rest Break</p>
+      
+      <!-- Circular Countdown Display -->
+      <div class="relative w-44 h-44 mx-auto flex items-center justify-center mb-5">
+        <svg class="w-full h-full transform -rotate-90">
+          <circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="8" class="text-slate-800" fill="transparent" />
+          <circle id="timer-progress-ring" cx="88" cy="88" r="76" stroke="currentColor" stroke-width="8" class="text-amber-400 timer-ring-circle" fill="transparent" stroke-dasharray="477.5" stroke-dashoffset="0" stroke-linecap="round" />
+        </svg>
+        <div class="absolute flex flex-col items-center">
+          <span id="timer-seconds-display" class="text-5xl font-mono font-black text-white">60</span>
+          <span class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">SECONDS</span>
+        </div>
+      </div>
+
+      <!-- Timer Controls (For Controller / Standalone) -->
+      <div id="timer-controls-row" class="flex items-center justify-center gap-2 mb-3">
+        <button onclick="toggleTimerPlay()" id="btn-timer-toggle" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm transition">
+          Pause
+        </button>
+        <button onclick="resetTimer(60)" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition">
+          60s
+        </button>
+        <button onclick="resetTimer(120)" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition">
+          120s
+        </button>
+      </div>
+
+      <button onclick="dismissTimerModal()" class="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition">
+        Resume Match / Dismiss
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= MATCH WINNER OVERLAY ================= -->
+  <div id="match-winner-overlay" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+    <div class="text-6xl mb-4 animate-bounce">🏆</div>
+    <h2 id="winner-team-title" class="text-4xl sm:text-6xl font-black tracking-tight mb-2 text-yellow-400">TEAM BLUE WINS!</h2>
+    <p id="winner-match-summary" class="text-xl sm:text-2xl text-slate-300 font-semibold mb-8">Sets: 2 - 0 (21-18, 21-15)</p>
+    <div class="flex flex-wrap items-center justify-center gap-4">
+      <button onclick="resetMatch(true)" class="px-8 py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-lg shadow-xl shadow-amber-500/30 transition transform hover:scale-105">
+        Start New Match
+      </button>
+      <button onclick="closeWinnerOverlay()" class="px-6 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-lg border border-slate-700 transition">
+        View Final Scoreboard
+      </button>
+    </div>
+  </div>
+
   <!-- ================= JAVASCRIPT APPLICATION LOGIC ================= -->
   <script>
     /* =================================================================
@@ -459,7 +571,6 @@
         setsWon: 0,
         color: 'red'
       },
-      // Court assignment: left team and right team
       courtLeft: 'A',  // team id on left side of UI
       courtRight: 'B', // team id on right side of UI
       servingTeam: 'A', // 'A' or 'B'
@@ -469,7 +580,16 @@
       setsToWin: 2, // Best of 3
       intervalTriggered: false,
       history: [],
-      matchWinner: null
+      setScores: [], // [{ game: 1, scoreA: 21, scoreB: 18, winner: 'TEAM BLUE' }]
+      matchWinner: null,
+      // Synchronized timer state
+      timer: {
+        active: false,
+        isOpen: false,
+        secondsLeft: 60,
+        totalSeconds: 60,
+        title: 'Rest Break'
+      }
     };
 
     // Connection & Device State
@@ -479,7 +599,10 @@
     let wakeLock = null;
     let isTouchLocked = false;
     let soundEnabled = true;
+    let voiceUmpireEnabled = true;
+    let voiceLanguage = 'th'; // 'th' | 'en'
     let activeEditingSide = null;
+    let timerInterval = null;
 
     // Web Audio Synthesizer for Clean Feedback
     let audioCtx = null;
@@ -503,6 +626,27 @@
       }
     }
 
+    // Buzzer Sound when break timer ends
+    function playBuzzer() {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        [0, 0.18, 0.36].forEach(delay => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(880, audioCtx.currentTime + delay);
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + 0.12);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + delay);
+          osc.stop(audioCtx.currentTime + delay + 0.12);
+        });
+      } catch (e) {}
+    }
+
     // Haptic Feedback Helper
     function triggerHaptic(pattern = 35) {
       if ('vibrate' in navigator) {
@@ -511,10 +655,53 @@
     }
 
     /* =================================================================
+     * VOICE UMPIRE (WEB SPEECH API)
+     * ================================================================= */
+    function speakScore(serverScore, receiverScore, pointType = null) {
+      if (!voiceUmpireEnabled) return;
+      if (!('speechSynthesis' in window)) return;
+
+      try {
+        window.speechSynthesis.cancel(); // Stop any pending speech
+
+        let text = '';
+        if (voiceLanguage === 'th') {
+          if (pointType === 'match_point') {
+            text = `แมตช์พอยต์, ${serverScore} ต่อ ${receiverScore}`;
+          } else if (pointType === 'game_point') {
+            text = `เกมพอยต์, ${serverScore} ต่อ ${receiverScore}`;
+          } else if (serverScore === receiverScore) {
+            text = (serverScore >= 20) ? `ดิวส์ ${serverScore} เท่า` : `${serverScore} เท่า`;
+          } else {
+            text = `${serverScore} - ${receiverScore}`;
+          }
+        } else {
+          // English
+          if (pointType === 'match_point') {
+            text = `Match Point, ${serverScore} - ${receiverScore}`;
+          } else if (pointType === 'game_point') {
+            text = `Game Point, ${serverScore} - ${receiverScore}`;
+          } else if (serverScore === receiverScore) {
+            text = (serverScore >= 20) ? `Deuce, ${serverScore} all` : `${serverScore} all`;
+          } else {
+            text = `${serverScore} - ${receiverScore}`;
+          }
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = (voiceLanguage === 'th') ? 'th-TH' : 'en-US';
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        console.warn('SpeechSynthesis error:', e);
+      }
+    }
+
+    /* =================================================================
      * BADMINTON RULES ENGINE
      * ================================================================= */
     function recordStateForUndo() {
-      // Deep snapshot of current game state
       const snapshot = {
         teamA: { ...state.teamA },
         teamB: { ...state.teamB },
@@ -523,14 +710,15 @@
         servingTeam: state.servingTeam,
         gameNumber: state.gameNumber,
         intervalTriggered: state.intervalTriggered,
-        matchWinner: state.matchWinner
+        matchWinner: state.matchWinner,
+        setScores: [...state.setScores]
       };
       state.history.push(snapshot);
-      if (state.history.length > 50) state.history.shift(); // Keep 50 steps
+      if (state.history.length > 50) state.history.shift();
     }
 
     function addScore(teamId) {
-      if (state.mode === 'display') return; // Display cannot change score
+      if (state.mode === 'display') return;
       if (state.matchWinner) return;
 
       recordStateForUndo();
@@ -538,8 +726,6 @@
       const otherTeam = teamId === 'A' ? state.teamB : state.teamA;
 
       scoringTeam.score += 1;
-
-      // Serving Rule: The side that wins the rally wins a point and becomes/remains the server
       state.servingTeam = teamId;
 
       triggerHaptic(35);
@@ -552,8 +738,16 @@
         playBeep(900, 0.25, 'triangle');
       }
 
-      // Check Game Win Condition
-      checkGameStatus(scoringTeam, otherTeam);
+      // Check Game Status & Winner
+      const gameEnded = checkGameStatus(scoringTeam, otherTeam);
+
+      // Check Point Alert (Game Point / Match Point) for speech
+      if (!gameEnded) {
+        const pointAlert = checkPointType(scoringTeam, otherTeam);
+        const serverScore = (state.servingTeam === scoringTeam.id) ? scoringTeam.score : otherTeam.score;
+        const receiverScore = (state.servingTeam === scoringTeam.id) ? otherTeam.score : scoringTeam.score;
+        speakScore(serverScore, receiverScore, pointAlert);
+      }
 
       syncState();
       renderUI();
@@ -577,11 +771,26 @@
       }
     }
 
+    function checkPointType(scoringTeam, otherTeam) {
+      const s = scoringTeam.score;
+      const o = otherTeam.score;
+      const target = state.targetScore;
+
+      // Needs 1 point to win game
+      const isOnePtAway = (s >= target - 1 && s > o) || (s === state.maxScore - 1);
+      if (!isOnePtAway) return null;
+
+      if (scoringTeam.setsWon === state.setsToWin - 1) {
+        return 'match_point';
+      }
+      return 'game_point';
+    }
+
     function checkGameStatus(scoringTeam, otherTeam) {
       const s = scoringTeam.score;
       const o = otherTeam.score;
 
-      // Win if: >= 21 pts and lead by >= 2, OR sudden death at 30 pts
+      // Win if: >= target pts and lead by >= 2, OR sudden death at 30 pts
       const hasWonGame = (s >= state.targetScore && s - o >= 2) || (s === state.maxScore);
 
       if (hasWonGame) {
@@ -589,10 +798,24 @@
         triggerHaptic([100, 80, 150]);
         playBeep(1100, 0.35, 'square');
 
+        // Record past set
+        state.setScores.push({
+          game: state.gameNumber,
+          scoreA: state.teamA.score,
+          scoreB: state.teamB.score,
+          winner: scoringTeam.name
+        });
+
         // Check Match Win (Best of 3 -> 2 sets)
         if (scoringTeam.setsWon >= state.setsToWin) {
           state.matchWinner = scoringTeam.name;
           showWinnerCelebration(scoringTeam.name);
+          if (voiceUmpireEnabled && 'speechSynthesis' in window) {
+            const msg = (voiceLanguage === 'th') ? `${scoringTeam.name} ชนะการแข่งขัน!` : `${scoringTeam.name} wins the match!`;
+            const utt = new SpeechSynthesisUtterance(msg);
+            utt.lang = (voiceLanguage === 'th') ? 'th-TH' : 'en-US';
+            window.speechSynthesis.speak(utt);
+          }
         } else {
           // Advance to next game and auto-prompt swap
           setTimeout(() => {
@@ -602,13 +825,16 @@
               state.teamA.score = 0;
               state.teamB.score = 0;
               state.intervalTriggered = false;
-              switchEnds(false); // auto swap ends for next game
+              switchEnds(false);
+              openTimerModal(120, `Game ${state.gameNumber} Break (120s)`);
               syncState();
               renderUI();
             }
           }, 400);
         }
+        return true;
       }
+      return false;
     }
 
     function undoLastAction() {
@@ -624,6 +850,7 @@
       state.gameNumber = previous.gameNumber;
       state.intervalTriggered = previous.intervalTriggered;
       state.matchWinner = previous.matchWinner;
+      state.setScores = [...previous.setScores];
 
       triggerHaptic([30, 30]);
       playBeep(500, 0.08);
@@ -635,7 +862,6 @@
       if (state.mode === 'display') return;
       recordStateForUndo();
 
-      // Swap court assignments
       const temp = state.courtLeft;
       state.courtLeft = state.courtRight;
       state.courtRight = temp;
@@ -671,15 +897,32 @@
       state.intervalTriggered = false;
       state.matchWinner = null;
       state.servingTeam = 'A';
+      state.setScores = [];
 
       closeWinnerOverlay();
       dismissIntervalAlert();
+      dismissTimerModal();
       syncState();
       renderUI();
     }
 
     function confirmReset() {
       resetMatch(false);
+    }
+
+    function setTargetScore(target) {
+      state.targetScore = target;
+      [11, 15, 21].forEach(score => {
+        const btn = document.getElementById(`btn-target-${score}`);
+        if (!btn) return;
+        if (score === target) {
+          btn.className = 'py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs border border-amber-400 transition';
+        } else {
+          btn.className = 'py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700 hover:bg-slate-700 transition';
+        }
+      });
+      syncState();
+      renderUI();
     }
 
     /* =================================================================
@@ -700,7 +943,7 @@
       if (scoreLeftEl.textContent !== String(leftTeam.score)) {
         scoreLeftEl.textContent = leftTeam.score;
         scoreLeftEl.classList.remove('score-pulse');
-        void scoreLeftEl.offsetWidth; // re-flow
+        void scoreLeftEl.offsetWidth;
         scoreLeftEl.classList.add('score-pulse');
       }
 
@@ -718,6 +961,9 @@
       // Serving Indicator & Official Court Position (Even = Right Court, Odd = Left Court)
       renderServerIndicators(leftTeam, rightTeam);
 
+      // Render Game Point / Match Point Badges
+      renderPointAlerts(leftTeam, rightTeam);
+
       // Court Colors: Left is always Blue style, Right is Red style
       const leftEl = document.getElementById('side-left');
       const rightEl = document.getElementById('side-right');
@@ -734,7 +980,16 @@
       }
 
       // Match game round text
-      document.getElementById('game-round-badge').textContent = `Game ${state.gameNumber} (to ${state.targetScore})`;
+      document.getElementById('game-round-badge').textContent = `Game ${state.gameNumber} (${state.targetScore} pts)`;
+
+      // Past Sets Badge Summary
+      const pastBadge = document.getElementById('past-sets-badge');
+      if (state.setScores && state.setScores.length > 0) {
+        pastBadge.classList.remove('hidden');
+        pastBadge.textContent = state.setScores.map(s => `G${s.game}: ${s.scoreA}-${s.scoreB}`).join(' | ');
+      } else {
+        pastBadge.classList.add('hidden');
+      }
     }
 
     function updateSetDots(side, wonCount) {
@@ -742,17 +997,13 @@
       const dot2 = document.querySelector(`.set-dot-${side}-2`);
       if (!dot1 || !dot2) return;
 
-      if (wonCount >= 1) {
-        dot1.className = `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`;
-      } else {
-        dot1.className = `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
-      }
+      dot1.className = (wonCount >= 1) 
+        ? `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`
+        : `set-dot-${side}-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
 
-      if (wonCount >= 2) {
-        dot2.className = `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`;
-      } else {
-        dot2.className = `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
-      }
+      dot2.className = (wonCount >= 2)
+        ? `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-amber-300 shadow-md transition`
+        : `set-dot-${side}-2 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white/60 bg-transparent transition`;
     }
 
     function renderServerIndicators(leftTeam, rightTeam) {
@@ -776,6 +1027,28 @@
       }
     }
 
+    function renderPointAlerts(leftTeam, rightTeam) {
+      const alertLeft = document.getElementById('point-alert-left');
+      const alertRight = document.getElementById('point-alert-right');
+
+      const typeLeft = checkPointType(leftTeam, rightTeam);
+      const typeRight = checkPointType(rightTeam, leftTeam);
+
+      if (typeLeft) {
+        alertLeft.textContent = (typeLeft === 'match_point') ? '🏆 MATCH POINT' : '🔥 GAME POINT';
+        alertLeft.classList.remove('hidden');
+      } else {
+        alertLeft.classList.add('hidden');
+      }
+
+      if (typeRight) {
+        alertRight.textContent = (typeRight === 'match_point') ? '🏆 MATCH POINT' : '🔥 GAME POINT';
+        alertRight.classList.remove('hidden');
+      } else {
+        alertRight.classList.add('hidden');
+      }
+    }
+
     /* =================================================================
      * TOUCH, GESTURE & CLICK HANDLING (CONTROLLER MODE)
      * ================================================================= */
@@ -784,7 +1057,7 @@
     let touchStartTime = 0;
 
     function handleSideClick(side, event) {
-      if (state.mode === 'display') return; // Locked on display
+      if (state.mode === 'display') return;
       if (isTouchLocked) return;
 
       createRipple(event, side);
@@ -792,7 +1065,6 @@
       addScore(teamId);
     }
 
-    // Touch gesture listener on sides for Swipe Down = -1
     ['side-left', 'side-right'].forEach(id => {
       const el = document.getElementById(id);
 
@@ -811,7 +1083,7 @@
         const deltaX = touch.clientX - touchStartX;
         const duration = Date.now() - touchStartTime;
 
-        // Detect Swipe Down gesture: vertical distance > 50px, predominantly downwards
+        // Detect Swipe Down gesture
         if (deltaY > 55 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && duration < 500) {
           const side = el.getAttribute('data-side');
           decrementScore(side, e);
@@ -838,14 +1110,87 @@
     }
 
     /* =================================================================
-     * INTERVAL & WINNER CELEBRATION
+     * INTERACTIVE INTERVAL & REST BREAK COUNTDOWN TIMER
      * ================================================================= */
+    const CIRCUMFERENCE = 2 * Math.PI * 76; // r=76 -> ~477.52
+
+    function openTimerModal(seconds = 60, title = 'Rest Break') {
+      state.timer.isOpen = true;
+      state.timer.totalSeconds = seconds;
+      state.timer.secondsLeft = seconds;
+      state.timer.title = title;
+      state.timer.active = true;
+
+      document.getElementById('timer-modal-title').textContent = title.toUpperCase();
+      document.getElementById('interval-timer-modal').classList.remove('hidden');
+      updateTimerDisplay();
+
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (state.timer.active && state.timer.secondsLeft > 0) {
+          state.timer.secondsLeft -= 1;
+          updateTimerDisplay();
+          syncState();
+
+          if (state.timer.secondsLeft === 0) {
+            clearInterval(timerInterval);
+            state.timer.active = false;
+            playBuzzer();
+            triggerHaptic([200, 100, 200, 100, 400]);
+          }
+        }
+      }, 1000);
+
+      syncState();
+    }
+
+    function updateTimerDisplay() {
+      const display = document.getElementById('timer-seconds-display');
+      const ring = document.getElementById('timer-progress-ring');
+      const toggleBtn = document.getElementById('btn-timer-toggle');
+
+      if (display) display.textContent = state.timer.secondsLeft;
+
+      if (ring) {
+        const offset = CIRCUMFERENCE - (state.timer.secondsLeft / state.timer.totalSeconds) * CIRCUMFERENCE;
+        ring.style.strokeDashoffset = offset;
+      }
+
+      if (toggleBtn) {
+        toggleBtn.textContent = state.timer.active ? 'Pause' : 'Start';
+        toggleBtn.className = state.timer.active 
+          ? 'px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm transition'
+          : 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition';
+      }
+    }
+
+    function toggleTimerPlay() {
+      state.timer.active = !state.timer.active;
+      updateTimerDisplay();
+      syncState();
+    }
+
+    function resetTimer(seconds = 60) {
+      state.timer.totalSeconds = seconds;
+      state.timer.secondsLeft = seconds;
+      state.timer.active = true;
+      updateTimerDisplay();
+      syncState();
+    }
+
+    function dismissTimerModal() {
+      state.timer.isOpen = false;
+      state.timer.active = false;
+      clearInterval(timerInterval);
+      document.getElementById('interval-timer-modal').classList.add('hidden');
+      dismissIntervalAlert();
+      syncState();
+    }
+
     function showIntervalAlert() {
       const banner = document.getElementById('interval-alert-banner');
       banner.classList.remove('hidden');
-      setTimeout(() => {
-        banner.classList.add('hidden');
-      }, 10000); // Auto hide after 10s or user dismiss
+      setTimeout(() => banner.classList.add('hidden'), 12000);
     }
 
     function dismissIntervalAlert() {
@@ -861,28 +1206,13 @@
       summary.textContent = `Match Finished (${state.teamA.setsWon} - ${state.teamB.setsWon})`;
       overlay.classList.remove('hidden');
 
-      // Fire festive confetti
       if (typeof confetti === 'function') {
         const end = Date.now() + 2500;
         const colors = ['#3B82F6', '#EF4444', '#FBBF24', '#10B981'];
         (function frame() {
-          confetti({
-            particleCount: 4,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-            colors: colors
-          });
-          confetti({
-            particleCount: 4,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-            colors: colors
-          });
-          if (Date.now() < end) {
-            requestAnimationFrame(frame);
-          }
+          confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors });
+          confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors });
+          if (Date.now() < end) requestAnimationFrame(frame);
         }());
       }
     }
@@ -931,7 +1261,6 @@
       return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Sync State from Controller to all connected Displays
     function syncState() {
       if (state.mode === 'controller' && peerConnections.length > 0) {
         const payload = JSON.stringify({ type: 'SCORE_UPDATE', data: state });
@@ -941,7 +1270,6 @@
       }
     }
 
-    // Host Controller Session
     function initControllerMode() {
       state.mode = 'controller';
       if (!state.roomPin) state.roomPin = generate6DigitPin();
@@ -953,10 +1281,8 @@
       document.getElementById('bottom-bar').classList.remove('hidden');
       document.getElementById('display-mode-shield').classList.add('hidden');
 
-      // Generate QR Code with direct URL
       generateQRCode();
 
-      // Initialize PeerJS Host
       const peerId = PEER_PREFIX + state.roomPin;
       if (peer) peer.destroy();
 
@@ -980,7 +1306,6 @@
         conn.on('open', () => {
           console.log('Courtside iPad display connected!');
           updateModeBadge(`Controller (${peerConnections.length} Display)`, 'bg-emerald-500');
-          // Immediately send full state
           conn.send(JSON.stringify({ type: 'SCORE_UPDATE', data: state }));
         });
 
@@ -993,31 +1318,26 @@
       peer.on('error', (err) => {
         console.error('PeerJS error:', err);
         if (err.type === 'unavailable-id') {
-          // If ID collision, generate new pin and retry
           state.roomPin = generate6DigitPin();
           initControllerMode();
         }
       });
     }
 
-    // Connect as Display Mode (iPad)
     function initDisplayMode(roomPin) {
       state.mode = 'display';
       state.roomPin = roomPin;
 
-      // Lock UI for Display
       document.getElementById('bottom-bar').classList.add('hidden');
       document.getElementById('display-mode-shield').classList.remove('hidden');
       document.getElementById('room-pin-pill').classList.add('hidden');
       updateModeBadge(`Display (PIN: ${roomPin})`, 'bg-emerald-500');
 
-      // Auto-enable Wake Lock on iPad display
       requestWakeLock();
 
       const hostPeerId = PEER_PREFIX + roomPin;
       if (peer) peer.destroy();
 
-      // Random peer ID for the display client
       peer = new Peer({
         debug: 1,
         config: {
@@ -1053,7 +1373,6 @@
         try {
           const msg = JSON.parse(raw);
           if (msg.type === 'SCORE_UPDATE') {
-            // Mirror Controller state
             state.teamA = msg.data.teamA;
             state.teamB = msg.data.teamB;
             state.courtLeft = msg.data.courtLeft;
@@ -1063,6 +1382,20 @@
             state.targetScore = msg.data.targetScore;
             state.intervalTriggered = msg.data.intervalTriggered;
             state.matchWinner = msg.data.matchWinner;
+            state.setScores = msg.data.setScores || [];
+
+            // Timer sync to iPad
+            if (msg.data.timer) {
+              state.timer = msg.data.timer;
+              if (state.timer.isOpen) {
+                document.getElementById('timer-modal-title').textContent = state.timer.title.toUpperCase();
+                document.getElementById('interval-timer-modal').classList.remove('hidden');
+                document.getElementById('timer-controls-row').classList.add('hidden'); // Display is read-only
+                updateTimerDisplay();
+              } else {
+                document.getElementById('interval-timer-modal').classList.add('hidden');
+              }
+            }
 
             if (state.intervalTriggered) showIntervalAlert();
             if (state.matchWinner) showWinnerCelebration(state.matchWinner);
@@ -1222,8 +1555,31 @@
       soundEnabled = !soundEnabled;
       const btn = document.getElementById('toggle-sound-btn');
       btn.textContent = `Sound: ${soundEnabled ? 'ON' : 'OFF'}`;
-      btn.className = `px-3 py-1 rounded-lg ${soundEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'} border border-slate-700 font-semibold`;
+      btn.className = `px-3 py-1 rounded-lg ${soundEnabled ? 'bg-indigo-600 text-white border border-indigo-500' : 'bg-slate-800 text-slate-400 border border-slate-700'} font-semibold transition`;
       if (soundEnabled) playBeep(800, 0.1);
+    }
+
+    function toggleVoiceUmpire() {
+      voiceUmpireEnabled = !voiceUmpireEnabled;
+      const btn = document.getElementById('btn-toggle-voice');
+      btn.textContent = `Voice: ${voiceUmpireEnabled ? 'ON' : 'OFF'}`;
+      btn.className = voiceUmpireEnabled 
+        ? 'px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow transition'
+        : 'px-3 py-1 rounded-lg bg-slate-800 text-slate-400 font-bold text-xs border border-slate-700 transition';
+      if (voiceUmpireEnabled) speakScore('0', '0');
+    }
+
+    function setVoiceLang(lang) {
+      voiceLanguage = lang;
+      const btnTh = document.getElementById('btn-voice-th');
+      const btnEn = document.getElementById('btn-voice-en');
+      if (lang === 'th') {
+        btnTh.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold text-xs border border-indigo-500 transition';
+        btnEn.className = 'px-3 py-1 rounded-lg bg-slate-800 text-slate-300 font-semibold text-xs border border-slate-700 hover:bg-slate-700 transition';
+      } else {
+        btnEn.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold text-xs border border-indigo-500 transition';
+        btnTh.className = 'px-3 py-1 rounded-lg bg-slate-800 text-slate-300 font-semibold text-xs border border-slate-700 hover:bg-slate-700 transition';
+      }
     }
 
     // Keyboard Shortcuts for quick scoring / testing
@@ -1237,6 +1593,9 @@
         undoLastAction();
       } else if (e.key === 's' || e.key === 'S') {
         switchEnds();
+      } else if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        openTimerModal(60, 'Quick Break');
       }
     });
 
@@ -1250,13 +1609,11 @@
 
       renderUI();
 
-      // If opened via QR code or direct link with room param
       if (modeParam === 'display' && roomParam) {
         initDisplayMode(roomParam);
       } else if (modeParam === 'controller') {
         initControllerMode();
       } else {
-        // Default standalone, auto-request wake lock
         requestWakeLock();
       }
     });
