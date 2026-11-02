@@ -74,7 +74,7 @@ To make it accessible to everyone anywhere in the world on cellular 4G/5G or gym
 3. Under **Branch**, select `main` and root `/`, then click **Save**.
 4. Your scoreboard will be live at `https://<username>.github.io/<repo-name>/`.
 
-### Option B: Vercel (https://badminton-live-score.vercel.app)
+### Option B: Vercel (https://badminton-score.vercel.app)
 1. Import this repository in [Vercel](https://vercel.com/new).
-2. Set Project Name to `badminton-live-score` (or any custom domain).
+2. Set Project Name to `badminton-score` (or any custom domain).
 3. Click **Deploy**. Vercel will automatically read `vercel.json` and deploy in 5 seconds with an HTTPS URL.
